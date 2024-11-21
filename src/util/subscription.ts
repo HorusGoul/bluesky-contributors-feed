@@ -28,7 +28,7 @@ export abstract class FirehoseSubscriptionBase {
             value,
           )
         } catch (err) {
-          console.error('repo subscription skipped invalid message', err)
+          // console.error('repo subscription skipped invalid message', err)
         }
       },
     })

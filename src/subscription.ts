@@ -5,26 +5,23 @@ import {
 import { FirehoseSubscriptionBase, getOpsByType } from './util/subscription'
 
 export class FirehoseSubscription extends FirehoseSubscriptionBase {
+  private didsList = new Set<string>()
+  private lastDidsListUpdate = 0
+  private didUpdateInProgress = false
+
   async handleEvent(evt: RepoEvent) {
     if (!isCommit(evt)) return
 
     const ops = await getOpsByType(evt)
 
-    // This logs the text of every post off the firehose.
-    // Just for fun :)
-    // Delete before actually using
-    for (const post of ops.posts.creates) {
-      console.log(post.record.text)
-    }
+    this.updateDidsList()
 
     const postsToDelete = ops.posts.deletes.map((del) => del.uri)
     const postsToCreate = ops.posts.creates
       .filter((create) => {
-        // only alf-related posts
-        return create.record.text.toLowerCase().includes('alf')
+        return this.didsList.has(create.author)
       })
       .map((create) => {
-        // map alf-related posts to a db row
         return {
           uri: create.uri,
           cid: create.cid,
@@ -44,6 +41,33 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         .values(postsToCreate)
         .onConflict((oc) => oc.doNothing())
         .execute()
+    }
+  }
+
+  async updateDidsList() {
+    try {
+      if (this.didUpdateInProgress) {
+        return
+      }
+
+      this.didUpdateInProgress = true
+
+      // update the list of DIDs every 5 seconds
+      if (Date.now() - this.lastDidsListUpdate > 5 * 1000) {
+        const contributors = await this.db
+          .selectFrom('contributor_did')
+          .select('did')
+          .execute()
+
+        this.didsList = new Set(
+          contributors.map((contributor) => contributor.did),
+        )
+        this.lastDidsListUpdate = Date.now()
+      }
+    } catch (err) {
+      console.error('could not update DIDs list', err)
+    } finally {
+      this.didUpdateInProgress = false
     }
   }
 }

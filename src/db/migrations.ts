@@ -27,3 +27,15 @@ migrations['001'] = {
     await db.schema.dropTable('sub_state').execute()
   },
 }
+
+migrations['002'] = {
+  async up(db: Kysely<unknown>) {
+    await db.schema
+      .createTable('contributor_did')
+      .addColumn('did', 'varchar', (col) => col.primaryKey())
+      .execute()
+  },
+  async down(db: Kysely<unknown>) {
+    await db.schema.dropTable('contributor_did').execute()
+  },
+}

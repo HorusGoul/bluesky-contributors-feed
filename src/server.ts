@@ -9,6 +9,8 @@ import { createDb, Database, migrateToLatest } from './db'
 import { FirehoseSubscription } from './subscription'
 import { AppContext, Config } from './config'
 import wellKnown from './well-known'
+import { Octokit } from '@octokit/rest'
+import { findContributors } from './findContributors'
 
 export class FeedGenerator {
   public app: express.Application
@@ -63,6 +65,12 @@ export class FeedGenerator {
 
   async start(): Promise<http.Server> {
     await migrateToLatest(this.db)
+    await findContributors(
+      new Octokit({
+        auth: this.cfg.githubToken,
+      }),
+      this.db,
+    )
     this.firehose.run(this.cfg.subscriptionReconnectDelay)
     this.server = this.app.listen(this.cfg.port, this.cfg.listenhost)
     await events.once(this.server, 'listening')
