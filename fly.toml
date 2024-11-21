@@ -1,0 +1,25 @@
+# fly.toml app configuration file generated for bluesky-contributors-feed-empty-star-8516 on 2024-11-21T01:35:20+01:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'bluesky-contributors-feed-empty-star-8516'
+primary_region = 'arn'
+
+[build]
+
+[[mounts]]
+  source = 'data'
+  destination = '/data'
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = 'off'
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  memory = '1024mb'
+  cpu_kind = 'shared'
+  cpus = 1
