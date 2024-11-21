@@ -19,7 +19,7 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
     const postsToDelete = ops.posts.deletes.map((del) => del.uri)
     const postsToCreate = ops.posts.creates
       .filter((create) => {
-        return this.didsList.has(create.author)
+        return this.didsList.has(create.author) && !create.record.reply
       })
       .map((create) => {
         return {
