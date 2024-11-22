@@ -71,6 +71,7 @@ export class FeedGenerator {
       }),
       this.db,
     )
+    await this.firehose.createWorkers()
     this.firehose.run(this.cfg.subscriptionReconnectDelay)
     this.server = this.app.listen(this.cfg.port, this.cfg.listenhost)
     await events.once(this.server, 'listening')

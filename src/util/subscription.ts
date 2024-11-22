@@ -12,29 +12,25 @@ import {
   isCommit,
 } from '../lexicon/types/com/atproto/sync/subscribeRepos'
 import { Database } from '../db'
+import { CID } from 'multiformats/cid'
 
 export abstract class FirehoseSubscriptionBase {
-  public sub: Subscription<RepoEvent>
+  public sub: Subscription<Commit>
 
   constructor(public db: Database, public service: string) {
-    this.sub = new Subscription({
+    this.sub = new Subscription<Commit>({
       service: service,
       method: ids.ComAtprotoSyncSubscribeRepos,
       getParams: () => this.getCursor(),
       validate: (value: unknown) => {
-        try {
-          return lexicons.assertValidXrpcMessage<RepoEvent>(
-            ids.ComAtprotoSyncSubscribeRepos,
-            value,
-          )
-        } catch (err) {
-          // console.error('repo subscription skipped invalid message', err)
+        if (isCommit(value) && value.blocks instanceof Uint8Array) {
+          return value
         }
       },
     })
   }
 
-  abstract handleEvent(evt: RepoEvent): Promise<void>
+  abstract handleEvent(evt: Commit): Promise<void>
 
   async run(subscriptionReconnectDelay: number) {
     try {
@@ -42,9 +38,9 @@ export abstract class FirehoseSubscriptionBase {
         this.handleEvent(evt).catch((err) => {
           console.error('repo subscription could not handle message', err)
         })
-        // update stored cursor every 20 events or so
-        if (isCommit(evt) && evt.seq % 20 === 0) {
-          await this.updateCursor(evt.seq)
+
+        if (evt.seq % 10000 === 0) {
+          this.updateCursor(evt.seq).catch(() => null)
         }
       }
     } catch (err) {
@@ -58,9 +54,9 @@ export abstract class FirehoseSubscriptionBase {
 
   async updateCursor(cursor: number) {
     await this.db
-      .updateTable('sub_state')
-      .set({ cursor })
-      .where('service', '=', this.service)
+      .insertInto('sub_state')
+      .values({ service: this.service, cursor })
+      .onConflict((oc) => oc.column('service').doUpdateSet({ cursor }))
       .execute()
   }
 
@@ -74,7 +70,15 @@ export abstract class FirehoseSubscriptionBase {
   }
 }
 
-export const getOpsByType = async (evt: Commit): Promise<OperationsByType> => {
+export type GetOpsParams = {
+  blocks: Uint8Array
+  repo: string
+  ops: { action: string; cid?: string; path: string }[]
+}
+
+export const getOpsByType = async (
+  evt: GetOpsParams,
+): Promise<OperationsByType> => {
   const car = await readCar(evt.blocks)
   const opsByType: OperationsByType = {
     posts: { creates: [], deletes: [] },
@@ -91,7 +95,7 @@ export const getOpsByType = async (evt: Commit): Promise<OperationsByType> => {
 
     if (op.action === 'create') {
       if (!op.cid) continue
-      const recordBytes = car.blocks.get(op.cid)
+      const recordBytes = car.blocks.get(CID.parse(op.cid))
       if (!recordBytes) continue
       const record = cborToLexRecord(recordBytes)
       const create = { uri, cid: op.cid.toString(), author: evt.repo }

@@ -1,73 +1,49 @@
+import { cpus } from 'os'
 import {
+  Commit,
   OutputSchema as RepoEvent,
   isCommit,
 } from './lexicon/types/com/atproto/sync/subscribeRepos'
-import { FirehoseSubscriptionBase, getOpsByType } from './util/subscription'
+import { FirehoseSubscriptionBase } from './util/subscription'
+import { Worker } from 'worker_threads'
+import { Remote, wrap } from 'comlink'
+import nodeEndpoint from 'comlink/dist/esm/node-adapter.mjs'
+import { CommitHandlerWorkerType } from './worker'
+import path from 'path'
 
 export class FirehoseSubscription extends FirehoseSubscriptionBase {
-  private didsList = new Set<string>()
-  private lastDidsListUpdate = 0
-  private didUpdateInProgress = false
+  private workers: Remote<CommitHandlerWorkerType>[] = []
 
-  async handleEvent(evt: RepoEvent) {
-    if (!isCommit(evt)) return
+  async createWorkers() {
+    const workerCount = cpus().length - 1
 
-    const ops = await getOpsByType(evt)
+    for (let i = 0; i < workerCount; i++) {
+      const worker = new Worker(
+        path.resolve(__dirname, './worker.entrypoint.mjs'),
+        {
+          execArgv: ['--import', 'tsx'],
+        },
+      )
+      const workerApi = wrap<CommitHandlerWorkerType>(nodeEndpoint(worker))
 
-    this.updateDidsList()
-
-    const postsToDelete = ops.posts.deletes.map((del) => del.uri)
-    const postsToCreate = ops.posts.creates
-      .filter((create) => {
-        return this.didsList.has(create.author) && !create.record.reply
-      })
-      .map((create) => {
-        return {
-          uri: create.uri,
-          cid: create.cid,
-          indexedAt: new Date().toISOString(),
-        }
-      })
-
-    if (postsToDelete.length > 0) {
-      await this.db
-        .deleteFrom('post')
-        .where('uri', 'in', postsToDelete)
-        .execute()
+      this.workers.push(workerApi)
     }
-    if (postsToCreate.length > 0) {
-      await this.db
-        .insertInto('post')
-        .values(postsToCreate)
-        .onConflict((oc) => oc.doNothing())
-        .execute()
-    }
+
+    await Promise.all(
+      this.workers.map((worker, index) => worker.init(index.toString())),
+    )
   }
 
-  async updateDidsList() {
-    try {
-      if (this.didUpdateInProgress) {
-        return
-      }
-
-      this.didUpdateInProgress = true
-
-      // update the list of DIDs every 5 seconds
-      if (Date.now() - this.lastDidsListUpdate > 5 * 1000) {
-        const contributors = await this.db
-          .selectFrom('contributor_did')
-          .select('did')
-          .execute()
-
-        this.didsList = new Set(
-          contributors.map((contributor) => contributor.did),
-        )
-        this.lastDidsListUpdate = Date.now()
-      }
-    } catch (err) {
-      console.error('could not update DIDs list', err)
-    } finally {
-      this.didUpdateInProgress = false
-    }
+  async handleEvent(evt: Commit) {
+    const worker = this.workers[evt.seq % this.workers.length]
+    await worker.handleCommit({
+      blocks: evt.blocks,
+      repo: evt.repo,
+      ops: evt.ops.map((op) => ({
+        action: op.action,
+        cid: op.cid?.toString(),
+        path: op.path,
+      })),
+    })
   }
 }

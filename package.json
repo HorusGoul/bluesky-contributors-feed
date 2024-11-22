@@ -9,7 +9,7 @@
   "scripts": {
     "publishFeed": "tsx scripts/publishFeedGen.ts",
     "unpublishFeed": "tsx scripts/unpublishFeedGen.ts",
-    "dev": "tsx src/index.ts",
+    "dev": "tsx --inspect src/index.ts",
     "build": "tsc",
     "start": "tsx src/index.ts"
   },
@@ -23,6 +23,7 @@
     "@octokit/core": "^6.1.2",
     "@octokit/rest": "^21.0.2",
     "better-sqlite3": "^11.3.0",
+    "comlink": "^4.4.2",
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
     "kysely": "^0.27.4",
