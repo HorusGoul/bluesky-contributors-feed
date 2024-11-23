@@ -48,7 +48,4 @@ VOLUME /data
 
 # Start the server by default, this can be overwritten at runtime
 EXPOSE 3000
-ENV FEEDGEN_SQLITE_LOCATION="/data/sqlite.db"
-ENV FEEDGEN_HOSTNAME="bluesky-contributors.horus.dev"
-ENV FEEDGEN_LISTENHOST="0.0.0.0"
 CMD [ "yarn", "run", "start" ]

@@ -8,6 +8,12 @@ primary_region = 'lax'
 
 [build]
 
+[env]
+  FEEDGEN_SQLITE_LOCATION = "/data/sqlite.db"
+  FEEDGEN_HOSTNAME = "bluesky-contributors.horus.dev"
+  FEEDGEN_LISTENHOST = "0.0.0.0"
+  FEEDGEN_PUBLISHER_DID = "did:plc:pe5lhpot2jvtxribylimv2is"
+
 [[mounts]]
   source = 'data'
   destination = '/data'

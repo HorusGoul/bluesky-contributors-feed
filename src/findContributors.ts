@@ -5,7 +5,12 @@ import { Database } from './db'
 const repositories = ['bluesky-social/social-app']
 
 export async function findContributors(octokit: Octokit, db: Database) {
-  run(octokit, db).catch((error) => console.error(error))
+  const execute = () => run(octokit, db).catch((error) => console.error(error))
+
+  execute()
+
+  // Find contributors every hour
+  setInterval(execute, 1000 * 60 * 60)
 }
 
 async function run(octokit: Octokit, db: Database) {
