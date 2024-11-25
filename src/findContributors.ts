@@ -1,5 +1,5 @@
 import { Octokit } from '@octokit/rest'
-import { DidResolver, HandleResolver } from '@atproto/identity'
+import { HandleResolver } from '@atproto/identity'
 import { Database } from './db'
 
 const repositories = ['bluesky-social/social-app']
@@ -19,7 +19,7 @@ async function run(octokit: Octokit, db: Database) {
     repositories.map(async (fullRepo) => {
       const [owner, repo] = fullRepo.split('/')
 
-      const data = await octokit.paginate(
+      const contributors = await octokit.paginate(
         'GET /repos/{owner}/{repo}/contributors',
         {
           owner,
@@ -27,16 +27,45 @@ async function run(octokit: Octokit, db: Database) {
         },
       )
 
-      return data
+      return contributors.map((contributor) => ({
+        contributor,
+        owner,
+        repo,
+      }))
     }),
   )
-  const flatContributors = repoContributors
-    .flat()
-    .filter((contributor) => contributor.login) as { login: string }[]
 
-  const uniqueContributorLogins = new Set(
-    flatContributors.map((contributor) => contributor.login),
-  )
+  const uniqueContributorLogins = new Set<string>()
+  const contributorsByRepo = new Map<string, Set<string>>()
+
+  for (const { contributor, owner, repo } of repoContributors.flat()) {
+    if (!contributor.login) {
+      continue
+    }
+
+    const fullRepo = `${owner}/${repo}`
+    let set = contributorsByRepo.get(fullRepo)
+
+    if (!set) {
+      set = new Set()
+      contributorsByRepo.set(fullRepo, set)
+    }
+
+    set.add(contributor.login)
+    uniqueContributorLogins.add(contributor.login)
+  }
+
+  function findReposByContributor(contributor: string) {
+    let repos = new Set<string>()
+
+    for (const [repo, contributors] of contributorsByRepo.entries()) {
+      if (contributors.has(contributor)) {
+        repos.add(repo)
+      }
+    }
+
+    return [...repos]
+  }
 
   const handles = new Set<string>()
   const foundDids = new Set<string>()
@@ -53,6 +82,24 @@ async function run(octokit: Octokit, db: Database) {
 
     type Response = {
       user: UserResponse
+    }
+
+    const cachedContributor = await db
+      .selectFrom('contributor_did')
+      .selectAll()
+      .where('githubHandle', '=', contributor)
+      .executeTakeFirst()
+
+    if (cachedContributor) {
+      // Check lastSyncedAt, if it's been less than 1 week, skip
+      const lastSyncedAt = new Date(cachedContributor.lastSyncedAt)
+      const now = new Date()
+      const diff = now.getTime() - lastSyncedAt.getTime()
+      const oneWeek = 1000 * 60 * 60 * 24 * 7
+
+      if (diff < oneWeek) {
+        continue
+      }
     }
 
     const data = await octokit.graphql<Response>(/* GraphQL */ `
@@ -95,9 +142,30 @@ async function run(octokit: Octokit, db: Database) {
           console.log(`Found DID for ${handle}: ${did}`)
           foundDids.add(did)
 
+          const contributorRepositories = findReposByContributor(contributor)
+
+          for (const repo of contributorRepositories) {
+            db.insertInto('repo_contributor')
+              .values({ repo, contributorDid: did })
+              .onConflict((oc) => oc.doNothing())
+              .execute()
+              .catch(() => null)
+          }
+
           db.insertInto('contributor_did')
-            .values({ did })
-            .onConflict((oc) => oc.doNothing())
+            .values({
+              did,
+              githubHandle: contributor,
+              lastSyncedAt: new Date().toISOString(),
+              lastBackfilledAt: new Date().toISOString(),
+            })
+            .onConflict((oc) =>
+              oc.doUpdateSet({
+                did,
+                githubHandle: contributor,
+                lastSyncedAt: new Date().toISOString(),
+              }),
+            )
             .execute()
             .catch(() => null)
         })

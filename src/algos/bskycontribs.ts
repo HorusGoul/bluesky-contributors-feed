@@ -4,10 +4,17 @@ import { AppContext } from '../config'
 // max 15 chars
 export const shortname = 'bskycontribs'
 
+const repositories = ['bluesky-social/social-app']
+
 export const handler = async (ctx: AppContext, params: QueryParams) => {
   let builder = ctx.db
     .selectFrom('post')
     .selectAll()
+    .innerJoin('repo_contributor', (join) =>
+      join
+        .onRef('post.author', '=', 'repo_contributor.contributorDid')
+        .on('repo_contributor.repo', 'in', repositories),
+    )
     .orderBy('indexedAt', 'desc')
     .orderBy('cid', 'desc')
     .limit(params.limit)

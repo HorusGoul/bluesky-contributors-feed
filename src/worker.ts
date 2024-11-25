@@ -42,6 +42,7 @@ class CommitHandlerWorker {
             uri: create.uri,
             cid: create.cid,
             indexedAt: create.record.createdAt,
+            author: create.author,
           }
         })
 
