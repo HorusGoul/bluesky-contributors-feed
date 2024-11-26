@@ -21,10 +21,17 @@ export abstract class FirehoseSubscriptionBase {
     this.sub = new Subscription<Commit>({
       service: service,
       method: ids.ComAtprotoSyncSubscribeRepos,
-      getParams: () => this.getCursor(),
       validate: (value: unknown) => {
         if (isCommit(value) && value.blocks instanceof Uint8Array) {
           return value
+        }
+      },
+      onReconnectError: (err: unknown, n: number) => {
+        console.error(`Error reconnecting to repo subscription #${n}`, err)
+
+        if (n > 10) {
+          console.error('Too many reconnect attempts, exiting')
+          process.exit(1)
         }
       },
     })
@@ -38,10 +45,6 @@ export abstract class FirehoseSubscriptionBase {
         this.handleEvent(evt).catch((err) => {
           console.error('repo subscription could not handle message', err)
         })
-
-        if (evt.seq % 10000 === 0) {
-          this.updateCursor(evt.seq).catch(() => null)
-        }
       }
     } catch (err) {
       console.error('repo subscription errored', err)
@@ -50,23 +53,6 @@ export abstract class FirehoseSubscriptionBase {
         subscriptionReconnectDelay,
       )
     }
-  }
-
-  async updateCursor(cursor: number) {
-    await this.db
-      .insertInto('sub_state')
-      .values({ service: this.service, cursor })
-      .onConflict((oc) => oc.column('service').doUpdateSet({ cursor }))
-      .execute()
-  }
-
-  async getCursor(): Promise<{ cursor?: number }> {
-    const res = await this.db
-      .selectFrom('sub_state')
-      .selectAll()
-      .where('service', '=', this.service)
-      .executeTakeFirst()
-    return res ? { cursor: res.cursor } : {}
   }
 }
 
