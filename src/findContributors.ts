@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest'
 import { HandleResolver } from '@atproto/identity'
 import { Database } from './db'
+import { backfillDid } from './backfill'
 
 const repositories = ['bluesky-social/social-app']
 
@@ -139,6 +140,7 @@ async function run(octokit: Octokit, db: Database) {
             return
           }
 
+          did = did.trim()
           console.log(`Found DID for ${handle}: ${did}`)
           foundDids.add(did)
 
@@ -157,7 +159,7 @@ async function run(octokit: Octokit, db: Database) {
               did,
               githubHandle: contributor,
               lastSyncedAt: new Date().toISOString(),
-              lastBackfilledAt: new Date().toISOString(),
+              lastBackfilledAt: new Date(0).toISOString(),
             })
             .onConflict((oc) =>
               oc.doUpdateSet({
@@ -167,6 +169,9 @@ async function run(octokit: Octokit, db: Database) {
               }),
             )
             .execute()
+            .then(() => {
+              return backfillDid(did, db)
+            })
             .catch(() => null)
         })
         .catch(() => null)
