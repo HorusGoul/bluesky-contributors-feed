@@ -22,7 +22,10 @@ export const handler = async (ctx: AppContext, params: QueryParams) => {
   if (params.cursor) {
     const timeStr = new Date(parseInt(params.cursor, 10)).toISOString()
     builder = builder.where('post.indexedAt', '<', timeStr)
+  } else {
+    builder = builder.where('post.indexedAt', '<', new Date().toISOString())
   }
+
   const res = await builder.execute()
 
   const feed = res.map((row) => ({

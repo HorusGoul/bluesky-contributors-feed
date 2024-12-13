@@ -35,7 +35,12 @@ class CommitHandlerWorker {
       const postsToDelete = ops.posts.deletes.map((del) => del.uri)
       const postsToCreate = ops.posts.creates
         .filter((create) => {
-          return this.didsList.has(create.author) && !create.record.reply
+          return (
+            this.didsList.has(create.author) &&
+            !create.record.reply &&
+            create.record.createdAt &&
+            create.record.createdAt < new Date().toISOString()
+          )
         })
         .map((create) => {
           return {
